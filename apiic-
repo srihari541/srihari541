@@ -1,0 +1,131 @@
+pipeline {
+    agent {
+        label "master"
+    }
+    tools {
+        maven "Maven"
+    }
+    environment {
+        NEXUS_VERSION = "nexus2"
+        NEXUS_PROTOCOL = "https"
+        NEXUS_URL = "3.12.161.92:8081"
+        NEXUS_REPOSITORY = "jenkins-nexus"
+        NEXUS_CREDENTIAL_ID = "nexus-user"
+        IMAGE_NAME = 'mt-client-app'
+        REGION = 'us-east-2'
+        ECRURL = '402686720131.dkr.ecr.us-east-2.amazonaws.com'
+        GIT_PROJECT_URL = 'https://gitlab.mouritech.com/APIIC/apiic-api.git'
+        AWS_ACCOUNT_NUM = '402686720131'
+		//commitId = getCommitID()
+        SONAR_PROJECT_KEY = 'mt-digital-core-platform-client-app'
+        SONAR_URL = 'https://sonarqube.mouritech.net'
+        SONAR_LOGIN_CREDENTIALS = '6f64ddcc3abbaa69319c6d6abb5efb032cac79bd'
+         //ECRCRED = 'ecr:ecr.us-east-2:35356177-bc69-4ee1-8653-59aae6d56c9c'
+    }
+    
+	stages {
+		stage('Checkout') {
+			steps {
+				git credentialsId: 'f6b6245f-9806-4e47-94e7-fcdd86192ca7', url: "${GIT_PROJECT_URL}", branch: 'land_acquisition_validation_changes'
+			}
+		}
+		     
+     stage('build common api')
+        {
+            steps
+            {
+                
+                dir('apiic-commons-api'){
+                    
+                  sh 'mvn clean install'
+                  }
+                 }
+        }
+                 
+    stage ('build api')
+    {
+        steps
+        {
+            dir('apiic-landacquisition-api') {
+                    
+                  sh 'mvn clean install'
+                  //sh 'mvn clean install -X'
+                  }
+                 }
+        }
+    stage('Static Code Analysis') {
+	       steps {
+	           script {
+                        def scannerHome = tool 'sonar_scanner';
+                             withSonarQubeEnv('mt-sonarqube-new') {
+                                 dir('apiic-landacquisition-api'){
+                             sh 'mvn sonar:sonar -Dsonar.projectKey=APIIC-LandApi'
+                        }}
+                }
+            }
+        }
+    stage('Push to remote directory'){
+        steps{
+            dir('apiic-landacquisition-api/target'){
+                sshPublisher(publishers:[
+                    sshPublisherDesc(
+                        configName: 'APIIC-LandApi', transfers: [
+                            sshTransfer(
+                                cleanRemote: false, 
+                                excludes: '', 
+                                execCommand: '', 
+                                execTimeout: 120000, 
+                                flatten: false, 
+                                makeEmptyDirs: false, 
+                                noDefaultExcludes: false, 
+                                patternSeparator: '[, ]+', 
+                                remoteDirectory: '//home//dev', 
+                                remoteDirectorySDF: false, 
+                                removePrefix: '', 
+                                sourceFiles: '*.jar'
+                            )
+                        ], 
+                        usePromotionTimestamp: false, 
+                        useWorkspaceInPromotion: false, 
+                        verbose: false
+                    )
+                ])
+            }
+            
+        }
+    }
+    stage('run jar file'){
+        steps{
+            dir('apiic-landacquisition-api/target'){
+                sshPublisher(publishers:[
+                    sshPublisherDesc(
+                        configName: 'APIIC-LandApi', transfers: [
+                            sshTransfer(
+                                cleanRemote: false, 
+                                excludes: '', 
+                                execCommand: '''sudo kill -9 $(sudo lsof -t -i:3000); java -jar -Dspring.profiles.active=dev /home/dev/apiic-0.0.1-SNAPSHOT.jar''', 
+                                // images=($(lsof -t -i:4001)); if [ ${#images[@]} != 0 ]; then kill -9 $(lsof -t -i:4001); fi ; java -jar -Dspring.profiles.active=qa apiic-"${tag}"-SNAPSHOT.jar
+                                execTimeout: 120000, 
+                                flatten: false, 
+                                makeEmptyDirs: false, 
+                                noDefaultExcludes: false, 
+                                patternSeparator: '[, ]+', 
+                                remoteDirectory: '', 
+                                remoteDirectorySDF: false, 
+                                removePrefix: '', 
+                                sourceFiles: ''
+                            )
+                        ], 
+                        usePromotionTimestamp: false, 
+                        useWorkspaceInPromotion: false, 
+                        verbose: false
+                    )
+                ])
+            }
+            
+        }
+    }
+        
+    }
+            }
+	
