@@ -1,0 +1,83 @@
+pipeline {
+    agent {
+        label "dotnet-worker"
+    }
+    tools {
+        maven "Maven"
+    }
+    environment {
+        NEXUS_VERSION = "nexus2"
+        NEXUS_PROTOCOL = "https"
+        NEXUS_URL = "3.12.161.92:8081"
+        NEXUS_REPOSITORY = "jenkins-nexus"
+        NEXUS_CREDENTIAL_ID = "nexus-user"
+        IMAGE_NAME = 'mt-client-app'
+        REGION = 'us-east-2'
+        ECRURL = '402686720131.dkr.ecr.us-east-2.amazonaws.com'
+        GIT_PROJECT_URL = 'https://gitlab.mouritech.com/mt-digital-core-platform/dotnet/samples/client-app.git'
+        GIT_PROJECT_URL1 = 'https://dandappas:pWFwhgPdvs-A3NkEb-Hn@gitlab.mouritech.com/mt-digital-core-platform/devops_core/mtip-k8s.git'
+        AWS_ACCOUNT_NUM = '402686720131'
+        GIT_REPO_CREDS = 'f6b6245f-9806-4e47-94e7-fcdd86192ca7'
+        GIT_REPO_CRED = 'f6b6245f-9806-4e47-94e7-fcdd86192ca7'
+		//commitId = getCommitID()
+        SONAR_PROJECT_KEY = 'mt-digital-core-platform-client-app'
+        SONAR_URL = 'http://3.139.78.108:9000'
+        SONAR_LOGIN_CREDENTIALS = '33ce7658a9ad0a7ae2785c1de3d077672d07f6c1'
+        ECRCRED = 'ecr:ecr.us-east-2:35356177-bc69-4ee1-8653-59aae6d56c9c'
+    }
+    
+	stages {
+		stage('Checkout') {
+			steps {
+				git credentialsId: 'f6b6245f-9806-4e47-94e7-fcdd86192ca7', url: "${GIT_PROJECT_URL}"
+			}
+		}
+  
+     stage('Docker build')
+        {
+            steps
+            { 
+                dir('DigitalDemoSampleFrontend'){
+                    
+                   sh 'docker build -f ./ClientApp/Dockerfile -t "${IMAGE_NAME}":"{tag}" .'
+                   }
+                 }
+            }
+
+        stage('Docker push')
+       {
+            steps
+            {
+                sh 'aws ecr get-login-password --region "${REGION}" | docker login --username AWS --password-stdin "${AWS_ACCOUNT_NUM}".dkr.ecr."${REGION}".amazonaws.com'
+                sh 'docker tag "${IMAGE_NAME}":"{tag}" "${AWS_ACCOUNT_NUM}".dkr.ecr."${REGION}".amazonaws.com/"${IMAGE_NAME}":"{tag}"'
+                sh 'docker push "${AWS_ACCOUNT_NUM}".dkr.ecr."${REGION}".amazonaws.com/"${IMAGE_NAME}":"{tag}"'
+                         
+            }
+        }
+        
+    stage('Deploy to Dev') {
+      steps {
+     dir('mtip-k8s')
+    {
+        sh """
+        git config --global user.name 'dandappas'
+        git config --global user.email 'dandappas.in@mouritech.com'
+        """
+
+        git branch: 'master', url: "${GIT_PROJECT_URL1}", credentialsId: "${GIT_REPO_CRED}"
+		
+            sh """
+            ls -ltr
+            pwd
+            cd dev/us-east-2/dev-eks-digital-ip-cluster/dotnet-apps/client-app-frontend
+            kustomize edit set image "${AWS_ACCOUNT_NUM}".dkr.ecr."${REGION}".amazonaws.com/"${IMAGE_NAME}":"${tag}"
+            git add .
+            git commit -am "mt-client-app"
+            git push origin master
+        """
+        }
+
+        }
+    }
+}
+}
